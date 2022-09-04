@@ -1,0 +1,7 @@
+{
+  "PROXY_SERVER": {
+    "HOST": "52.12.3.145",
+    "PORT": 1234,
+    "REQUESTED_URL": ""
+  }
+}
