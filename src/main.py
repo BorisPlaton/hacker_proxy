@@ -1,5 +1,5 @@
 from configuration.settings import settings
-from proxy.handler import ProxyHandler
+from proxy.handlers import ProxyHandler
 from proxy.server import ProxyServer
 
 
