@@ -2,4 +2,4 @@ from socketserver import TCPServer
 
 
 class ProxyServer(TCPServer):
-    pass
+    allow_reuse_address = True

@@ -5,7 +5,14 @@ from proxy.server import ProxyServer
 
 def main():
     """Starts the forward proxy and handles incoming requests."""
-    with ProxyServer((settings['PROXY_SERVER']['HOST'], settings['PROXY_SERVER']['PORT']), ProxyHandler) as server:
+    proxy_server = ProxyServer(
+        (
+            settings['PROXY_SERVER']['HOST'],
+            settings['PROXY_SERVER']['PORT']
+        ),
+        ProxyHandler,
+    )
+    with proxy_server as server:
         server.serve_forever()
 
 

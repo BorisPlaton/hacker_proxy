@@ -2,6 +2,6 @@
   "PROXY_SERVER": {
     "HOST": "127.0.0.1",
     "PORT": 8888,
-    "REQUESTED_URL": "https://news.ycombinator.com/"
+    "REQUESTED_URL": "https://news.ycombinator.com"
   }
 }
