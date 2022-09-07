@@ -1,12 +1,12 @@
 import re
 from socketserver import StreamRequestHandler
-from typing import NamedTuple
+from typing import NamedTuple, Mapping
 
 import requests
 from requests import Response
 from requests.structures import CaseInsensitiveDict
 
-from configuration.settings import settings
+from configuration.settings import settings, ProxyServerSettings
 
 
 class UserRequest(NamedTuple):
@@ -16,71 +16,122 @@ class UserRequest(NamedTuple):
     headers: dict
 
 
-class ResponseHandler:
+class HttpParser:
+
+    @property
+    def proxy_settings(self) -> ProxyServerSettings:
+        """Returns a proxy settings."""
+        return settings['PROXY_SERVER']
+
+    def construct_remote_server_url(self, asked_url: str):
+        """Constructs the remote server url for sending requests to it."""
+        return self.proxy_settings['REQUESTED_URL'] + asked_url
+
+    @staticmethod
+    def construct_http_response(
+            status_line: str, headers: str, content: bytes
+    ) -> bytes:
+        """Constructs a http response."""
+        http_response_units = [status_line.encode(), headers.encode(), content]
+        return b'\r\n'.join(http_response_units)
+
+    @staticmethod
+    def get_status_line(
+            status_code: int, reason: str, http_version: str = '1.1'
+    ) -> str:
+        """Constructs the status line (Http version + status code + status detail)."""
+        status_line = f"HTTP/{http_version} {status_code} {reason}"
+        return status_line
+
+    @staticmethod
+    def get_headers_text(headers: Mapping) -> str:
+        """
+        Construct headers text from mapping of headers and their
+        values.
+        """
+        headers_text = ""
+        for header, value in headers.items():
+            headers_text += f"{header}: {value}\r\n"
+        return headers_text
+
+    @staticmethod
+    def get_headers_dict(headers: str) -> dict:
+        """Parses plain headers text and returns a dict of them."""
+        headers_lines = headers.strip().split('\n')
+        headers_dict = {}
+        for header_line in headers_lines:
+            header, value = header_line.strip().split(": ")
+            headers_dict[header] = value
+        return headers_dict
+
+
+class ResponseHandler(HttpParser):
     """
     The class responsible for sending requests to the remote server and
     handling them.
     """
 
-    def get_response_from_remote_server(self, user_request: str) -> tuple[str, bytes]:
+    def get_response_from_remote_server(self, user_request: UserRequest) -> bytes:
         """
-        Sends a request to the remote server and returns response headers and
-        the response content.
+        Sends a request to the remote server and returns response headers
+        and the response content.
         """
-        server_response = self.send_request_to_remote_server(user_request)
-        headers_text = self.get_response_headers_text(server_response.headers)
-        status_line_with_headers = self.add_status_line_to_headers(
-            server_response.status_code, server_response.reason, headers_text
+        server_response_data = self.send_user_request_to_server(user_request)
+        status_line, headers, content = self.get_server_response_parts(server_response_data)
+        return self.construct_http_response(status_line, headers, content)
+
+    def send_user_request_to_server(self, user_request: UserRequest) -> Response:
+        """Sends the client request to the remote server with changed url."""
+        server_response_data = requests.request(
+            user_request.method,
+            self.construct_remote_server_url(user_request.url),
+            headers=user_request.headers,
         )
-        return status_line_with_headers, server_response.content
+        return server_response_data
 
-    def send_request_to_remote_server(self, requested_url) -> Response:
-        """Sends the request to the remote server and returns the response."""
-        return requests.get(self.construct_remote_server_url(requested_url))
-
-    @staticmethod
-    def get_response_headers_text(headers: CaseInsensitiveDict) -> str:
-        """Constructs a headers text from the `headers` dict."""
-        headers_text = ""
-        for header, value in headers.items():
-            header_with_value = f"{header}: {value}\r\n"
-            headers_text += header_with_value
-        return headers_text
-
-    @staticmethod
-    def add_status_line_to_headers(
-            status_code: int, status_detail: str, headers_text: str, http_version: str = '1.1'
-    ) -> str:
-        """
-        Adds the status line (Http version + status code + status detail) to
-        the headers text and returns the result.
-        """
-        status_line = f"HTTP/{http_version} {status_code} {status_detail} \r\n"
-        return status_line + headers_text
+    def get_server_response_parts(self, server_response_data: Response) -> tuple[str, str, bytes]:
+        status_line = self.get_status_line(
+            server_response_data.status_code, server_response_data.reason
+        )
+        content = self.modify_response_content(
+            server_response_data.content, server_response_data.headers
+        )
+        modified_headers = self.modify_response_headers(
+            content, server_response_data.headers
+        )
+        headers_as_text = self.get_headers_text(modified_headers)
+        return status_line, headers_as_text, content
 
     @staticmethod
-    def add_content_to_headers(headers_text: str, content: str) -> str:
+    def modify_response_content(content: bytes, headers: CaseInsensitiveDict) -> bytes:
         """
-        Adds a response content to the headers and returns the result.
+        Modifies a content of the response if it is type of `text/html`. Otherwise,
+        returns how it was passed.
         """
-        return f"{headers_text}\r\n{content}".strip()
+        content_type_of_response = headers.get("Content-Type")
+        if content_type_of_response and 'text/html' in content_type_of_response:
+            pass
+        return content
 
     @staticmethod
-    def construct_remote_server_url(asked_url: str):
+    def modify_response_headers(content: bytes, headers: CaseInsensitiveDict) -> CaseInsensitiveDict:
         """
-        Constructs the url using the `self.remote_server_url` and
-        the `asked_url`.
+        Modifies headers. Set a `Content-Length` header and removes a chunk
+        encoding if it was provided.
         """
-        return settings['PROXY_SERVER']['REQUESTED_URL'] + asked_url
+        headers.pop('Transfer-Encoding', False)
+        headers.pop('Content-Encoding', False)
+        headers.update({'Content-Length': len(content)})
+        return headers
 
 
-class RequestHandler:
+class RequestHandler(HttpParser):
     """
     The class responsible for parsing and providing user's request
     in the appropriate form.
     """
 
-    def parse_user_request(self, request_text: str) -> UserRequest:
+    def parse_raw_http_text(self, request_text: bytes | str) -> UserRequest:
         """
         Parses a plain request text and returns appropriate
         information about it.
@@ -90,25 +141,22 @@ class RequestHandler:
             method=method,
             url=url,
             http_version=http_version,
-            headers=self.parse_headers_text(headers)
+            headers=self.get_headers_dict(headers)
         )
 
-    @staticmethod
-    def parse_headers_text(headers: str) -> dict:
-        """Parses plain headers text and returns a dict of them."""
-        headers_lines = headers.strip().split('\n')
-        headers_dict = {}
-        for header_line in headers_lines:
-            header, value = header_line.strip().split(": ")
-            headers_dict[header] = value
-        return headers_dict
-
-    @staticmethod
-    def change_host_in_user_request(user_request: str) -> str:
+    def change_host_in_user_request(self, user_request: str) -> str:
         """Changes the proxy address to the requested server url."""
-        proxy_settings = settings['PROXY_SERVER']
-        host_with_port_pattern = f"{proxy_settings['HOST']}:{proxy_settings['PORT']}"
-        return re.sub(host_with_port_pattern, proxy_settings['REQUESTED_URL'], user_request)
+        remote_server_host = self._get_host_from_remote_server_url()
+        host_with_port_pattern = f"{self.proxy_settings['HOST']}:{self.proxy_settings['PORT']}"
+        return re.sub(host_with_port_pattern, remote_server_host, user_request)
+
+    def _get_host_from_remote_server_url(self):
+        """
+        Returns host from the remote server url or raises Error if url is invalid.
+        """
+        if not (remote_server_host := re.search(r"(?<=://).*", self.proxy_settings['REQUESTED_URL'])):
+            raise ValueError("`REQUESTED_URL` in the configuration file has invalid value.")
+        return remote_server_host.group()
 
 
 class ProxyHandler(StreamRequestHandler, ResponseHandler, RequestHandler):
@@ -124,12 +172,17 @@ class ProxyHandler(StreamRequestHandler, ResponseHandler, RequestHandler):
         to him.
         """
         user_request = self.get_user_request()
+        server_response = self.get_response_from_remote_server(user_request)
+        status_line, headers, content = self.get_server_response_parts(
+            self.send_user_request_to_server(user_request)
+        )
+        self.send_response_to_user(self.construct_http_response(status_line, headers, content))
 
     def get_user_request(self) -> UserRequest:
         """Returns user's request."""
         request_as_plain_text = self.get_plain_text_of_user_request()
         request_with_changed_host = self.change_host_in_user_request(request_as_plain_text)
-        return self.parse_user_request(request_with_changed_host)
+        return self.parse_raw_http_text(request_with_changed_host)
 
     def get_plain_text_of_user_request(self) -> str:
         """Returns user's request as a plain text."""
@@ -140,3 +193,6 @@ class ProxyHandler(StreamRequestHandler, ResponseHandler, RequestHandler):
                 if line == b'\r\n' or line == b'\n':
                     break
         return user_request.decode()
+
+    def send_response_to_user(self, message: bytes):
+        self.wfile.write(message)

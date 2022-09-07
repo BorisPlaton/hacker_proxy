@@ -30,7 +30,7 @@ Accept: */*\r
 Content-Length: 34\r
 Content-Type: application/x-www-form-urlencoded\r
     """
-    parsed_headers = RequestHandler().parse_headers_text(headers_text)
+    parsed_headers = RequestHandler().get_headers_dict(headers_text)
     expected_parsed_headers = {
         "Host": "https://news.ycombinator.com",
         "User-Agent": "curl/7.81.0",
@@ -48,7 +48,7 @@ Host: 127.0.0.1:8888
 User-Agent: curl/7.81.0
 Accept: */*
     """
-    user_request_data = RequestHandler().parse_user_request(user_request)
+    user_request_data = RequestHandler().parse_raw_http_text(user_request)
     user_request_data_expected = UserRequest(
         method='POST',
         url='/hello.123141',
