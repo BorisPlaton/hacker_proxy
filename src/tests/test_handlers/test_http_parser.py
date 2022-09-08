@@ -105,19 +105,6 @@ def test_plain_text_of_server_socket_accepts_only_binary_io(http_parser, fake_so
         'fake_server_socket2.txt',
     ]
 )
-def test_plain_text_of_server_socket_accepts_only_binary_io(http_parser, fake_socket_file):
-    with pytest.raises(ValueError):
-        with open(get_path_to_source_file('test_handlers', 'source', fake_socket_file)) as server_socket:
-            assert http_parser.get_plain_text_of_user_request(server_socket) == ''.join(server_socket.readlines())
-
-
-@pytest.mark.parametrize(
-    "fake_socket_file",
-    [
-        'fake_server_socket.txt',
-        'fake_server_socket2.txt',
-    ]
-)
 def test_plain_text_of_server_socket_returned_by_parser(http_parser, fake_socket_file):
     path_to_fake_socket = get_path_to_source_file('test_handlers', 'source', fake_socket_file)
     with open(path_to_fake_socket, 'rb') as server_socket, open(path_to_fake_socket) as file_data:

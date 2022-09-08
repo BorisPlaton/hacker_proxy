@@ -145,15 +145,20 @@ class ServerResponseHandler(HttpParser):
         return content
 
     @staticmethod
-    def modify_words_in_html(html_content: bytes) -> bytes:
+    def modify_words_in_html(html_content: bytes | str) -> bytes:
         """
         Modifies all 6-length words in html with adding specific character
         in the end.
         """
-        soup = BeautifulSoup(html_content.decode(), "html.parser")
-        for e in soup.find_all(text=True):
+        html_content_in_string = html_content.decode() if isinstance(html_content, bytes) else html_content
+        soup = BeautifulSoup(html_content_in_string, "html.parser")
+        for e in soup.find_all(string=True):
             res = re.sub(
-                r'(\b[a-zA-z0-9]{' + str(settings.text_modifying['WORDS_LENGTH']) + r'}\b)',
+                (
+                        r'(?<![/|\\])(\b[a-zA-zа-яА-Я]{' +
+                        str(settings.text_modifying['WORDS_LENGTH']) +
+                        r'}\b)(?![/|\\])'
+                ),
                 r'\1' + settings.text_modifying['ADD_CHARACTER'],
                 e.string
             )
