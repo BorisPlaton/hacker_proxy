@@ -1,25 +1,6 @@
 import pytest
 
-from configuration.settings import settings
 from tests.utils import get_path_to_source_file
-
-
-@pytest.mark.parametrize(
-    "server_url, asked_url",
-    [
-        ('', ''),
-        ('fafagh/', '/item?helloworld=true'),
-        ('https://fafa', '/'),
-        ('http://fafa', '///'),
-    ]
-)
-def test_remote_server_url_constructing(http_parser, server_url, asked_url):
-    http_parser.proxy_settings['REQUESTED_URL'] = server_url
-    assert http_parser.construct_remote_server_url(asked_url) == server_url + asked_url
-
-
-def test_proxy_settings_property_is_key_of_settings_dict(http_parser):
-    assert http_parser.proxy_settings is settings['PROXY_SERVER']
 
 
 @pytest.mark.parametrize(

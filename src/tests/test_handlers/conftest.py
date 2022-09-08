@@ -1,12 +1,17 @@
 import pytest
 
 from configuration.settings import settings
-from proxy.handlers import UserRequestHandler, HttpParser
+from proxy.handlers import UserRequestHandler, HttpParser, ServerResponseHandler
+
+
+@pytest.fixture
+def project_settings():
+    return settings
 
 
 @pytest.fixture
 def proxy_settings():
-    return settings['PROXY_SERVER']
+    return settings.proxy_settings
 
 
 @pytest.fixture
@@ -21,4 +26,4 @@ def http_parser():
 
 @pytest.fixture
 def response_handler():
-    return HttpParser()
+    return ServerResponseHandler()

@@ -7,8 +7,8 @@ def main():
     """Starts the forward proxy and handles incoming requests."""
     proxy_server = ProxyServer(
         (
-            settings['PROXY_SERVER']['HOST'],
-            settings['PROXY_SERVER']['PORT']
+            settings.proxy_settings['HOST'],
+            settings.proxy_settings['PORT']
         ),
         ProxyHandler,
     )

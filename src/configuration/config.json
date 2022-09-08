@@ -3,5 +3,9 @@
     "HOST": "127.0.0.1",
     "PORT": 8888,
     "REQUESTED_URL": "https://news.ycombinator.com"
+  },
+  "TEXT_MODIFYING": {
+    "WORDS_LENGTH": 6,
+    "ADD_CHARACTER": "™"
   }
 }

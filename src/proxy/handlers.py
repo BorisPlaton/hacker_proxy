@@ -3,10 +3,11 @@ from socketserver import StreamRequestHandler
 from typing import NamedTuple, Mapping, BinaryIO
 
 import requests
+from bs4 import BeautifulSoup
 from requests import Response
 from requests.structures import CaseInsensitiveDict
 
-from configuration.settings import settings, ProxyServerSettings
+from configuration.settings import settings
 
 
 class UserRequest(NamedTuple):
@@ -24,10 +25,6 @@ class HttpParts(NamedTuple):
 
 class HttpParser:
     """The class constructs and parses http request/response."""
-
-    def construct_remote_server_url(self, asked_url: str):
-        """Constructs the remote server url for sending requests to it."""
-        return self.proxy_settings['REQUESTED_URL'] + asked_url
 
     def construct_http_response(
             self, status_line: str, headers: str, content: bytes
@@ -90,17 +87,17 @@ class HttpParser:
             headers_dict[header] = value
         return headers_dict
 
-    @property
-    def proxy_settings(self) -> ProxyServerSettings:
-        """Returns a proxy settings."""
-        return settings['PROXY_SERVER']
-
 
 class ServerResponseHandler(HttpParser):
     """
     The class responsible for sending requests to the remote server and
     handling them.
     """
+
+    @staticmethod
+    def construct_remote_server_url(asked_url: str):
+        """Constructs the remote server url for sending requests to it."""
+        return settings.proxy_settings['REQUESTED_URL'] + asked_url
 
     def get_modified_response_from_remote_server(self, user_request: UserRequest) -> bytes:
         """
@@ -137,16 +134,31 @@ class ServerResponseHandler(HttpParser):
         headers_as_text = self.construct_response_headers(modified_headers)
         return HttpParts(status_line, headers_as_text, content)
 
-    @staticmethod
-    def modify_response_content(content: bytes, headers: CaseInsensitiveDict) -> bytes:
+    def modify_response_content(self, content: bytes, headers: CaseInsensitiveDict) -> bytes:
         """
         Modifies a content of the response if it is type of `text/html`. Otherwise,
         returns how it was passed.
         """
         content_type_of_response = headers.get("Content-Type")
         if content_type_of_response and 'text/html' in content_type_of_response:
-            pass
+            content = self.modify_words_in_html(content)
         return content
+
+    @staticmethod
+    def modify_words_in_html(html_content: bytes) -> bytes:
+        """
+        Modifies all 6-length words in html with adding specific character
+        in the end.
+        """
+        soup = BeautifulSoup(html_content.decode(), "html.parser")
+        for e in soup.find_all(text=True):
+            res = re.sub(
+                r'(\b[a-zA-z0-9]{' + str(settings.text_modifying['WORDS_LENGTH']) + r'}\b)',
+                r'\1' + settings.text_modifying['ADD_CHARACTER'],
+                e.string
+            )
+            e.string.replace_with(res)
+        return str(soup).encode()
 
     @staticmethod
     def modify_response_headers(content: bytes, headers: CaseInsensitiveDict) -> CaseInsensitiveDict:
@@ -183,18 +195,19 @@ class UserRequestHandler(HttpParser):
     def change_host_in_user_request(self, user_request: str) -> str:
         """Changes the proxy address to the requested server url."""
         remote_server_host = self.get_host_from_remote_server_url()
-        host_with_port_pattern = f"{self.proxy_settings['HOST']}:{self.proxy_settings['PORT']}"
+        host_with_port_pattern = f"{settings.proxy_settings['HOST']}:{settings.proxy_settings['PORT']}"
         return re.sub(host_with_port_pattern, remote_server_host, user_request)
 
-    def get_host_from_remote_server_url(self):
+    @staticmethod
+    def get_host_from_remote_server_url():
         """
         Returns host from the remote server url or raises an error if
         url is invalid.
         """
-        remote_server_host = re.search(r"(?<=://).*", self.proxy_settings['REQUESTED_URL'].strip())
+        remote_server_host = re.search(r"(?<=://).*", settings.proxy_settings['REQUESTED_URL'].strip())
         if not remote_server_host:
             raise ValueError(
-                f"`{self.proxy_settings['REQUESTED_URL']}` is a wrong `REQUESTED_URL` value."
+                f"`{settings.proxy_settings['REQUESTED_URL']}` is a wrong `REQUESTED_URL` value."
             )
         return remote_server_host.group()
 
